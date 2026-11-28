@@ -48,25 +48,38 @@ final class Shade extends FrameLayout {
         haveBase = true;
         final int tk = ++seq;
         final int w = Math.max(320, U.W / 2), h = Math.max(180, U.H / 2);
+        // A glow seen before is reused straight away; new ones are baked at quarter size (it's a soft blur, so
+        // that looks the same and takes a quarter of the time).
+        final Bitmap known = glow == null ? null : glows.get(glow);
+        if (!newBg && newGlow && (glow == null || known != null)) { swapGlow(known); return; }
+        final int gw = Math.max(160, U.W / 4), gh = Math.max(90, U.H / 4);
         U.IO.execute(() -> {
             final Bitmap bb = newBg ? bake(w, h, bg, null) : null;
-            final Bitmap gb = newGlow && glow != null ? bakeGlow(w, h, glow) : null;
+            final Bitmap gb = !newGlow || glow == null ? null : known != null ? known : bakeGlow(gw, gh, glow);
             U.MAIN.post(() -> {
                 if (bb != null) base.setImageBitmap(bb);
+                if (gb != null) glows.put(glow, gb);
                 if (!newGlow || tk != seq) return;
-                ImageView in = showingA ? b : a, out = showingA ? a : b;
-                showingA = !showingA;
-                in.animate().cancel();
-                out.animate().cancel();
-                if (gb != null) {
-                    in.setImageBitmap(gb);
-                    in.setAlpha(0f);
-                    in.animate().alpha(1f).setDuration(500).start();
-                }
-                final ImageView o = out;
-                out.animate().alpha(0f).setDuration(500).withEndAction(() -> { if (o.getAlpha() == 0f) o.setImageDrawable(null); }).start();
+                swapGlow(gb);
             });
         });
+    }
+
+    /** The last few glows, by colour. */
+    private final android.util.LruCache<Integer, Bitmap> glows = new android.util.LruCache<>(12);
+
+    private void swapGlow(Bitmap gb) {
+        ImageView in = showingA ? b : a, out = showingA ? a : b;
+        showingA = !showingA;
+        in.animate().cancel();
+        out.animate().cancel();
+        if (gb != null) {
+            in.setImageBitmap(gb);
+            in.setAlpha(0f);
+            in.animate().alpha(1f).setDuration(300).start();
+        }
+        final ImageView o = out;
+        out.animate().alpha(0f).setDuration(300).withEndAction(() -> { if (o.getAlpha() == 0f) o.setImageDrawable(null); }).start();
     }
 
     /** Just the glow (colour with its own soft alpha), to sit over the fades. */

@@ -2097,6 +2097,7 @@ public class HomeActivity extends Activity implements SharedPreferences.OnShared
     private boolean heroCw;     // true while the hero shows a Continue watching item: bigger artwork, no extra lines
 
     private static final String LIVE_LOGO = "asset:live-tv-logo-v2.png";
+    private static final String LIVE_BACKDROP = "asset:live-backdrop-v4.jpg";
 
     /** Streaming service logos (and Live TV), decoded once when the row is built so the hero never waits for them. */
     private final java.util.Map<String, Bitmap> svcLogos = new java.util.concurrent.ConcurrentHashMap<>();
@@ -2107,11 +2108,23 @@ public class HomeActivity extends Activity implements SharedPreferences.OnShared
         for (Streaming.Service sv : Streaming.visible(this)) if (!TextUtils.isEmpty(sv.logo)) urls.add(sv.logo);
         final Context ac = getApplicationContext();
         final int w = V.dp(420);
+        // and the colour of each backdrop, so the glow around the picture is ready when the tile is focused
+        final java.util.List<String> arts = new java.util.ArrayList<>();
+        if (artMode() && V.artTint(this)) {
+            arts.add(LIVE_BACKDROP);
+            for (Streaming.Service sv : Streaming.visible(this)) if (!TextUtils.isEmpty(sv.hero)) arts.add(sv.hero);
+        }
         U.IO.execute(() -> {
             for (String u : urls) {
                 if (svcLogos.containsKey(u)) continue;
                 Bitmap b = Img.loadSync(ac, u, w);
                 if (b != null) svcLogos.put(u, b);
+            }
+            for (final String a : arts) {
+                Bitmap small = Img.loadSync(ac, a, 160);
+                if (small == null) continue;
+                final Integer c = ArtColor.extract(small);
+                U.MAIN.post(() -> { if (!artColors.containsKey(a)) artColors.put(a, c); });
             }
         });
     }
@@ -2263,19 +2276,24 @@ public class HomeActivity extends Activity implements SharedPreferences.OnShared
             }, first ? 0 : 420);
             // The colour does not wait for the backdrop: it is read from a small copy of the picture almost at once.
             if (artMode() && V.artTint(this)) {
-                U.MAIN.postDelayed(() -> {
+                if (artColors.containsKey(art)) {
+                    setAccent(artColors.get(art));   // colour already known for this picture: no waiting
+                } else U.MAIN.postDelayed(() -> {
                     if (token != heroToken) return;
                     Img.load(this, art, 160, small -> {
                         if (token != heroToken || small == null) return;
                         U.IO.execute(() -> {
                             final Integer c = ArtColor.extract(small);
-                            U.MAIN.post(() -> { if (token == heroToken) setAccent(c); });
+                            U.MAIN.post(() -> { artColors.put(art, c); if (token == heroToken) setAccent(c); });
                         });
                     });
                 }, 80);
             }
         }
     }
+
+    /** Colour read from each backdrop (null when it has none worth using), so going back to a tile is instant. */
+    private final java.util.Map<String, Integer> artColors = new java.util.HashMap<>();
 
     private android.animation.ValueAnimator accentFade;
 
@@ -3034,7 +3052,7 @@ public class HomeActivity extends Activity implements SharedPreferences.OnShared
             if (has) {
                 playGif(t, gif, "asset:tvguide-hover.gif", tw, th);
                 setHero("svc:live", "Live TV", "TV Guide", LIVE_LOGO,
-                        "Channels with a full TV guide · watch here or in Nuvio", 0, null, "asset:live-backdrop-v4.jpg");
+                        "Channels with a full TV guide · watch here or in Nuvio", 0, null, LIVE_BACKDROP);
             } else if (gifHost == t) {
                 stopGif();
             }
